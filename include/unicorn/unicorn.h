@@ -258,11 +258,15 @@ typedef enum uc_hook_type {
   @type: this memory is being READ, or WRITE
   @address: address where the code is being executed
   @size: size of data being read or written
-  @value: value of data being written to memory, or irrelevant if type = READ.
+  @value: pointer to data being written to memory, or read value on bypassed accesses.
   @user_data: user data passed to tracing APIs
+
+  @return: return true on bypassed accesses to prevent the actual memory access,
+      and in the case of read/fetch-events use the user-specified value.
+      return false to proceed with actual memory access.
 */
-typedef void (*uc_cb_hookmem_t)(uc_engine *uc, uc_mem_type type,
-        uint64_t address, int size, int64_t value, void *user_data);
+typedef bool (*uc_cb_hookmem_t)(uc_engine *uc, uc_mem_type type,
+        uint64_t address, int size, int64_t *value, void *user_data);
 
 /*
   Callback function for handling invalid memory access events (UC_MEM_*_UNMAPPED and

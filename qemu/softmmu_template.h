@@ -180,9 +180,24 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr, int mmu_idx,
     int error_code;
     struct hook *hook;
     bool handled;
+    bool bypassed;
 
     struct uc_struct *uc = env->uc;
     MemoryRegion *mr = memory_mapping(uc, addr);
+
+    // Unicorn: callback on memory read
+    // NOTE: this happens before the actual read, so we cannot tell
+    // the callback if read access is succesful, or not.
+    // See UC_HOOK_MEM_READ_AFTER & UC_MEM_READ_AFTER if you only care
+    // about successful read
+    if (READ_ACCESS_TYPE == MMU_DATA_LOAD) {
+        HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ) {
+            if (!HOOK_BOUND_CHECK(hook, addr))
+                continue;
+            if (bypassed = ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_READ, addr, DATA_SIZE, &res, hook->user_data))
+                return res;
+        }
+    }
 
     // memory might be still unmapped while reading or fetching
     if (mr == NULL) {
@@ -238,19 +253,6 @@ WORD_TYPE helper_le_ld_name(CPUArchState *env, target_ulong addr, int mmu_idx,
         }
     }
 #endif
-
-    // Unicorn: callback on memory read
-    // NOTE: this happens before the actual read, so we cannot tell
-    // the callback if read access is succesful, or not.
-    // See UC_HOOK_MEM_READ_AFTER & UC_MEM_READ_AFTER if you only care
-    // about successful read
-    if (READ_ACCESS_TYPE == MMU_DATA_LOAD) {
-        HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ) {
-            if (!HOOK_BOUND_CHECK(hook, addr))
-                continue;
-            ((uc_cb_hookmem_t)hook->callback)(env->uc, UC_MEM_READ, addr, DATA_SIZE, 0, hook->user_data);
-        }
-    }
 
     // Unicorn: callback on non-readable memory
     if (READ_ACCESS_TYPE == MMU_DATA_LOAD && mr != NULL && !(mr->perms & UC_PROT_READ)) {  //non-readable
@@ -386,7 +388,8 @@ _out:
         HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ_AFTER) {
             if (!HOOK_BOUND_CHECK(hook, addr))
                 continue;
-            ((uc_cb_hookmem_t)hook->callback)(env->uc, UC_MEM_READ_AFTER, addr, DATA_SIZE, res, hook->user_data);
+            if (bypassed = ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_READ, addr, DATA_SIZE, &res, hook->user_data))
+                return res;
         }
     }
 
@@ -407,9 +410,24 @@ WORD_TYPE helper_be_ld_name(CPUArchState *env, target_ulong addr, int mmu_idx,
     int error_code;
     struct hook *hook;
     bool handled;
+    bool bypassed;
 
     struct uc_struct *uc = env->uc;
     MemoryRegion *mr = memory_mapping(uc, addr);
+
+    // Unicorn: callback on memory read
+    // NOTE: this happens before the actual read, so we cannot tell
+    // the callback if read access is succesful, or not.
+    // See UC_HOOK_MEM_READ_AFTER & UC_MEM_READ_AFTER if you only care
+    // about successful read
+    if (READ_ACCESS_TYPE == MMU_DATA_LOAD) {
+        HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ) {
+            if (!HOOK_BOUND_CHECK(hook, addr))
+                continue;
+            if (bypassed = ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_READ, addr, DATA_SIZE, &res, hook->user_data))
+                return res;
+        }
+    }
 
     // memory can be unmapped while reading or fetching
     if (mr == NULL) {
@@ -465,19 +483,6 @@ WORD_TYPE helper_be_ld_name(CPUArchState *env, target_ulong addr, int mmu_idx,
         }
     }
 #endif
-
-    // Unicorn: callback on memory read
-    // NOTE: this happens before the actual read, so we cannot tell
-    // the callback if read access is succesful, or not.
-    // See UC_HOOK_MEM_READ_AFTER & UC_MEM_READ_AFTER if you only care
-    // about successful read
-    if (READ_ACCESS_TYPE == MMU_DATA_LOAD) {
-        HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ) {
-            if (!HOOK_BOUND_CHECK(hook, addr))
-                continue;
-            ((uc_cb_hookmem_t)hook->callback)(env->uc, UC_MEM_READ, addr, DATA_SIZE, 0, hook->user_data);
-        }
-    }
 
     // Unicorn: callback on non-readable memory
     if (READ_ACCESS_TYPE == MMU_DATA_LOAD && mr != NULL && !(mr->perms & UC_PROT_READ)) {  //non-readable
@@ -608,7 +613,8 @@ _out:
         HOOK_FOREACH(uc, hook, UC_HOOK_MEM_READ_AFTER) {
             if (!HOOK_BOUND_CHECK(hook, addr))
                 continue;
-            ((uc_cb_hookmem_t)hook->callback)(env->uc, UC_MEM_READ_AFTER, addr, DATA_SIZE, res, hook->user_data);
+            if (bypassed = ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_READ, addr, DATA_SIZE, &res, hook->user_data))
+                return res;
         }
     }
 
@@ -671,15 +677,17 @@ void helper_le_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
     uintptr_t haddr;
     struct hook *hook;
     bool handled;
+    bool bypassed;
 
     struct uc_struct *uc = env->uc;
     MemoryRegion *mr = memory_mapping(uc, addr);
 
     // Unicorn: callback on memory write
     HOOK_FOREACH(uc, hook, UC_HOOK_MEM_WRITE) {
-            if (!HOOK_BOUND_CHECK(hook, addr))
-                continue;
-        ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_WRITE, addr, DATA_SIZE, val, hook->user_data);
+        if (!HOOK_BOUND_CHECK(hook, addr))
+            continue;
+        if (bypassed = ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_WRITE, addr, DATA_SIZE, &val, hook->user_data))
+            return;
     }
 
     // Unicorn: callback on invalid memory
@@ -829,6 +837,7 @@ void helper_be_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
     uintptr_t haddr;
     struct hook *hook;
     bool handled;
+    bool bypassed;
 
     struct uc_struct *uc = env->uc;
     MemoryRegion *mr = memory_mapping(uc, addr);
@@ -837,7 +846,8 @@ void helper_be_st_name(CPUArchState *env, target_ulong addr, DATA_TYPE val,
     HOOK_FOREACH(uc, hook, UC_HOOK_MEM_WRITE) {
         if (!HOOK_BOUND_CHECK(hook, addr))
             continue;
-        ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_WRITE, addr, DATA_SIZE, val, hook->user_data);
+        if (bypassed = ((uc_cb_hookmem_t)hook->callback)(uc, UC_MEM_WRITE, addr, DATA_SIZE, val, hook->user_data))
+            return;
     }
 
     // Unicorn: callback on invalid memory
